@@ -1,0 +1,49 @@
+name: Update Yonder cask
+
+# Keeps Casks/yonder.rb on Yonder's latest release (version + checksum of the
+# universal .dmg). Runs on a schedule, so no cross-repo token is needed.
+on:
+  schedule:
+    - cron: "17 */4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find the latest release
+        id: rel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(gh release view --repo RMoura98/yonder --json tagName --jq .tagName)
+          VERSION="${TAG#v}"
+          CURRENT=$(sed -nE 's/^  version "(.*)"/\1/p' Casks/yonder.rb)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$VERSION" = "$CURRENT" ]; then echo "up_to_date=true" >> "$GITHUB_OUTPUT"; fi
+          echo "latest $VERSION, cask $CURRENT"
+
+      - name: Hash the universal .dmg
+        if: steps.rel.outputs.up_to_date != 'true'
+        id: sha
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ steps.rel.outputs.tag }}" --repo RMoura98/yonder --pattern "*_universal.dmg" --dir dist
+          echo "sha256=$(sha256sum dist/*_universal.dmg | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Update and commit
+        if: steps.rel.outputs.up_to_date != 'true'
+        run: |
+          sed -i -E 's/^  version ".*"/  version "${{ steps.rel.outputs.version }}"/' Casks/yonder.rb
+          sed -i -E 's/^  sha256 .*/  sha256 "${{ steps.sha.outputs.sha256 }}"/' Casks/yonder.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "yonder ${{ steps.rel.outputs.version }}"
+          git push
