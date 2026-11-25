@@ -12,8 +12,6 @@ cask "yonder" do
     strategy :github_latest
   end
 
-  depends_on macos: ">= :catalina"
-
   app "Yonder.app"
 
   # Yonder isn't notarized yet. Clearing the quarantine flag lets macOS open it
